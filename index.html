@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Binance IDO Connection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .status-box {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .success {
+            background-color: #e6ffe6;
+            border: 1px solid #4CAF50;
+        }
+        .error {
+            background-color: #ffe6e6;
+            border: 1px solid #f44336;
+        }
+        button {
+            background-color: #f0b90b;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <h1>Binance IDO Connection</h1>
+    <div id="status" class="status-box"></div>
+    <div id="wallet-info"></div>
+    <button id="connect-button" onclick="connectWallet()">Connect Wallet</button>
+    <button id="check-eligibility" onclick="checkEligibility()" disabled>Check Eligibility</button>
+
+    <script>
+        // Check if we're in Binance browser
+        const checkBinanceBrowser = () => {
+            try {
+                const hasW3W = !!window.binancew3w;
+                const hasBinanceApp = !!(
+                    window._bnJumpToAsset || 
+                    window._bnJumpToTrade || 
+                    window.binancew3w?.pcs
+                );
+                return {
+                    isInBinanceBrowser: hasW3W && hasBinanceApp,
+                    hasSignMethod: typeof window.binancew3w?.pcs?.sign === 'function'
+                };
+            } catch (e) {
+                return { isInBinanceBrowser: false, hasSignMethod: false };
+            }
+        };
+
+        // Try to open in Binance App
+        const openInBinanceApp = () => {
+            try {
+                window._bnJumpToAsset();
+            } catch (e) {
+                window.open("bnc://app.binance.com/mp/app?appId=xoqXxUSMRccLCrZNRebmzj&startPagePath=cGFnZXMvd2FsbGV0L2hvbWUvaW5kZXg=&showOptions=2");
+            }
+        };
+
+        // Check eligibility with API
+        const checkEligibility = async () => {
+            const address = localStorage.getItem('walletAddress');
+            if (!address) return;
+
+            try {
+                const timestamp = Date.now();
+                const response = await fetch(`/api/w3w/verify?address=${address}&timestamp=${timestamp}`);
+                const data = await response.json();
+                
+                const statusDiv = document.getElementById('status');
+                if (data.code === "000000") {
+                    statusDiv.className = "status-box success";
+                    statusDiv.innerHTML = "✅ Your wallet is eligible for IDO participation";
+                } else if (data.code === "351083") {
+                    statusDiv.className = "status-box error";
+                    statusDiv.innerHTML = "❌ Your wallet is restricted from participating";
+                } else {
+                    statusDiv.className = "status-box error";
+                    statusDiv.innerHTML = "❌ Your wallet is not eligible";
+                }
+            } catch (error) {
+                console.error('Error checking eligibility:', error);
+            }
+        };
+
+        // Connect wallet function
+        const connectWallet = async () => {
+            const { isInBinanceBrowser, hasSignMethod } = checkBinanceBrowser();
+            const statusDiv = document.getElementById('status');
+            const walletInfo = document.getElementById('wallet-info');
+
+            if (!isInBinanceBrowser) {
+                statusDiv.className = "status-box error";
+                statusDiv.innerHTML = "Please open this page in Binance App's browser";
+                openInBinanceApp();
+                return;
+            }
+
+            if (!hasSignMethod) {
+                statusDiv.className = "status-box error";
+                statusDiv.innerHTML = "W3W signing not available. Please update your Binance App.";
+                return;
+            }
+
+            try {
+                // Request account access
+                if (window.ethereum) {
+                    const accounts = await window.ethereum.request({ 
+                        method: 'eth_requestAccounts' 
+                    });
+                    
+                    if (accounts[0]) {
+                        localStorage.setItem('walletAddress', accounts[0]);
+                        walletInfo.innerHTML = `Connected: ${accounts[0].substring(0, 6)}...${accounts[0].substring(38)}`;
+                        document.getElementById('check-eligibility').disabled = false;
+                        statusDiv.className = "status-box success";
+                        statusDiv.innerHTML = "✅ Wallet connected successfully";
+                    }
+                }
+            } catch (error) {
+                console.error('Error connecting wallet:', error);
+                statusDiv.className = "status-box error";
+                statusDiv.innerHTML = `Error connecting wallet: ${error.message}`;
+            }
+        };
+
+        // Auto-connect on page load if in Binance browser
+        window.addEventListener('load', () => {
+            const { isInBinanceBrowser } = checkBinanceBrowser();
+            if (isInBinanceBrowser) {
+                connectWallet();
+            }
+        });
+
+        // Handle chain changes
+        if (window.ethereum) {
+            window.ethereum.on('chainChanged', () => {
+                window.location.reload();
+            });
+
+            window.ethereum.on('accountsChanged', () => {
+                window.location.reload();
+            });
+        }
+    </script>
+</body>
+</html>
